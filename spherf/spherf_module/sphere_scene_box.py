@@ -3,10 +3,9 @@ from typing import Any
 
 import torch
 from torch import nn, Tensor
-from jaxtyping import Float, Int, Shaped, Bool
+from jaxtyping import Float, Bool
 
 from nerfstudio.cameras.cameras import Cameras
-from nerfstudio.cameras.rays import RayBundle
 
 
 @dataclass

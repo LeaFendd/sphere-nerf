@@ -1,7 +1,6 @@
 from nerfstudio.engine.trainer import TrainerConfig
 from nerfstudio.plugins.types import MethodSpecification
 from nerfstudio.data.datamanagers.base_datamanager import VanillaDataManagerConfig
-from nerfstudio.data.dataparsers.colmap_dataparser import ColmapDataParserConfig
 from nerfstudio.data.dataparsers.blender_dataparser import BlenderDataParserConfig
 from nerfstudio.engine.optimizers import RAdamOptimizerConfig
 from nerfstudio.engine.schedulers import ExponentialDecaySchedulerConfig
@@ -21,8 +20,6 @@ spherf = MethodSpecification(
         pipeline=SpheRFPipelineConfig(
             datamanager=VanillaDataManagerConfig(
                 dataparser=BlenderDataParserConfig(),
-                # train_num_rays_per_batch=4096,
-                # eval_num_rays_per_batch=4096,
             ),
             model=SpheRFModelConfig(
                 field_dim=56,

@@ -1,40 +1,42 @@
-import torch
+from nerfstudio.engine.trainer import TrainerConfig
+from nerfstudio.plugins.types import MethodSpecification
+from nerfstudio.data.datamanagers.base_datamanager import VanillaDataManagerConfig
+from nerfstudio.data.dataparsers.colmap_dataparser import ColmapDataParserConfig
+from nerfstudio.data.dataparsers.blender_dataparser import BlenderDataParserConfig
+from nerfstudio.engine.optimizers import RAdamOptimizerConfig
+from nerfstudio.engine.schedulers import ExponentialDecaySchedulerConfig
+from nerfstudio.configs.base_config import ViewerConfig
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Tuple, Type, Literal
-
-from nerfstudio.models.base_model import Model, ModelConfig
-
-
-@dataclass
-class SphereNeRFModelConfig(ModelConfig):
-    """Sphere NeRF Model Config"""
-
-    _target: Type = field(default_factory=lambda: SphereNeRFModel)
-
-    angular_resolution: float = 0.2
-    """Angular resolution of sphere bones."""
-
-    field_dim: int = 48
-    """Feature dimension."""
+from spherf.spherf_pipeline import SpheRFPipelineConfig
+from spherf.spherf_model import SpheRFModelConfig
 
 
-class SphereNeRFModel(Model):
-    """Sphere NeRF Model
-
-    Args:
-        config: Basic SphereNeRF configuration to instantiate model
-    """
-
-    config: SphereNeRFModelConfig
-
-    def __init__(
-        self,
-        config: SphereNeRFModelConfig,
-        **kwargs,
-    ) -> None:
-        self.angular_resolution = config.angular_resolution
-        self.field_dim = config.field_dim
-        self.filed_shape = [int(360 / self.angular_resolution)] * 2
-
-        super().__init__(config=config, **kwargs)
+spherf = MethodSpecification(
+    config=TrainerConfig(
+        method_name="spherf",
+        steps_per_eval_batch=500,
+        steps_per_save=2000,
+        max_num_iterations=30000,
+        mixed_precision=True,
+        pipeline=SpheRFPipelineConfig(
+            datamanager=VanillaDataManagerConfig(
+                dataparser=BlenderDataParserConfig(),
+                # train_num_rays_per_batch=4096,
+                # eval_num_rays_per_batch=4096,
+            ),
+            model=SpheRFModelConfig(
+                field_dim=56,
+                angular_resolution=0.2,
+            ),
+        ),
+        optimizers={
+            "fields": {
+                "optimizer": RAdamOptimizerConfig(lr=1e-2, eps=1e-15),
+                "scheduler": ExponentialDecaySchedulerConfig(lr_final=1e-3, max_steps=30000),
+            },
+        },
+        viewer=ViewerConfig(),
+        vis="viewer",
+    ),
+    description="Base config for SpheRF.",
+)

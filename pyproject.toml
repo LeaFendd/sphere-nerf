@@ -1,5 +1,5 @@
 [project]
-name = "nerfstudio-spherf"
+name = "spherf"
 description = "SpheRF implmentation based on nerfstudio."
 version = "0.1.0"
 

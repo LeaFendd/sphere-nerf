@@ -1,16 +1,16 @@
-from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Type, Callable, Union
+from typing import Dict, List, Tuple, Type, Callable, Union, Optional
 from functools import partial
 
 import torch
 from torch import nn, Tensor
+from torch.nn import Parameter
 from torchmetrics.functional import structural_similarity_index_measure
 from torchmetrics.image import PeakSignalNoiseRatio
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
 from nerfstudio.cameras.rays import RayBundle
-from nerfstudio.models.base_model import ModelConfig, Model
+from nerfstudio.models.base_model import Model
 from nerfstudio.models.vanilla_nerf import VanillaModelConfig
 from nerfstudio.model_components.scene_colliders import SphereCollider
 from nerfstudio.model_components.ray_samplers import PDFSampler, UniformSampler
@@ -23,21 +23,21 @@ from nerfstudio.model_components.renderers import (
 )
 from nerfstudio.utils import colormaps, misc
 
-from .spherf_field import SpheRFField
-from .spherf_module.sphere_scene_box import SphereSceneBox
+from spherf.spherf_field import SpheRFField
+from spherf.spherf_module.sphere_scene_box import SphereSceneBox
 
 
 @dataclass
 class SpheRFModelConfig(VanillaModelConfig):
     _target: Type = field(default_factory=lambda: SpheRFModel)
     # field
-    field_dim: int
-    angular_resolution: float
-    sphere_scene_box: SphereSceneBox
+    field_dim: int = 32
+    angular_resolution: float = 0.2
+    sphere_scene_box: Optional[SphereSceneBox] = None
     init_feat: Callable = partial(nn.init.trunc_normal_, std=0.02)
     # mlp
     num_layers_density: int = 2
-    hidden_dim_density: int = 64
+    hidden_dim_density: int = 32
     num_layers_color: int = 3
     hidden_dim_color: int = 64
     # encoding
@@ -104,7 +104,9 @@ class SpheRFModel(Model):
         ray_bundle = self.collider.set_nears_and_fars(ray_bundle)
 
         # uniform sampling
-        ray_samples_uniform = self.sampler_uniform.generate_ray_samples()
+        ray_samples_uniform = self.sampler_uniform.generate_ray_samples(
+            ray_bundle, self.config.coarse_samples
+        )
 
         # First pass:
         field_outputs_coarse = self.field.forward(ray_samples_uniform)
@@ -220,3 +222,9 @@ class SpheRFModel(Model):
         }
         images_dict = {"img": combined_rgb, "accumulation": combined_acc, "depth": combined_depth}
         return metrics_dict, images_dict
+
+    def get_param_groups(self) -> Dict[str, List[Parameter]]:
+        param_groups = {}
+        param_groups["fields"] = list(self.field.parameters())
+
+        return param_groups

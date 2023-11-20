@@ -1,6 +1,5 @@
 from typing import Dict, Literal, Optional, Tuple, Callable
 from functools import partial
-from dataclasses import dataclass
 
 import torch
 from torch import Tensor, nn
@@ -16,9 +15,8 @@ from nerfstudio.field_components.field_heads import (
     RGBFieldHead,
 )
 
-from .spherf_module.sphere_scene_box import SphereSceneBox
-from .spherf_module.sphere_scene import SphereScene
-from .spherf_module.interpolation import AngularBilinearInterpolation
+from spherf.spherf_module.sphere_scene_box import SphereSceneBox
+from spherf.spherf_module.sphere_grid import SphereGrid, angular_bilinear_interpolation
 
 
 class SpheRFField(Field):
@@ -42,12 +40,12 @@ class SpheRFField(Field):
     ) -> None:
         super().__init__()
         # Scene.
-        self.scene = SphereScene(
+        self.scene = SphereGrid(
             field_dim,
             angular_resolution,
             sphere_scene_box,
+            angular_bilinear_interpolation,
             init_feat,
-            AngularBilinearInterpolation,
         )
 
         # Direction Encoding.
@@ -71,6 +69,7 @@ class SpheRFField(Field):
             in_dim=self.dim_in_density,
             num_layers=num_layers_density,
             layer_width=hidden_dim_density,
+            out_dim=hidden_dim_density,
             activation=nn.ReLU(),
             out_activation=None,
             implementation=implementation,
@@ -85,28 +84,38 @@ class SpheRFField(Field):
             in_dim=self.dim_in_color,
             num_layers=num_layers_color,
             layer_width=hidden_dim_color,
+            out_dim=hidden_dim_color,
             activation=nn.ReLU(),
-            out_activation=nn.Sigmoid(),
+            out_activation=None,
             implementation=implementation,
         )
+        # FIXME use FieldHead will lead to dtype mismatching error.
         self.head_rgb = RGBFieldHead(self.mlp_rgb.get_out_dim())
 
     def get_density(
         self, ray_samples: RaySamples
     ) -> Tuple[Shaped[Tensor, "*batch 1"], Float[Tensor, "*batch num_features"]]:
-        positions = ray_samples.frustums.get_positions().detach()
+        # convert to polar coordinates.
+        positions: Float[Tensor, "bs 3"] = (
+            ray_samples.frustums.get_positions().detach().reshape([-1, 3])
+        )
         positions = self.scene.scene_box.polar_coords(positions)
-        r: Float[Tensor, "*bs 1"] = positions[..., -1:]
+        r: Float[Tensor, "bs 1"] = positions[..., -1:]
 
         # TODO: check query features.
-        feature: Float[Tensor, "*bs field_dim"] = self.scene.query(positions)
-        encoded_r: Float[Tensor, "*bs r_enc_dim"] = self.radius_encoding(r)
-        # mlp_density.
-        mlp_density_out = self.mlp_density(torch.cat([feature, encoded_r], dim=-1))
-        density = self.head_density(mlp_density_out)
+        feature: Float[Tensor, "bs dim_f"] = self.scene.query(positions)
+        encoded_r: Float[Tensor, "bs dim_r"] = self.radius_encoding(r)
+
+        # passthrough mlp_density.
+        mlp_density_out: Float[Tensor, "bs dim_o"] = self.mlp_density(
+            torch.cat([feature, encoded_r], dim=-1)
+        )
+        density: Float[Tensor, "bs 1"] = self.head_density(mlp_density_out)
 
         # TODO: shotcut features?
         density_embedding = torch.cat([mlp_density_out, feature], -1)
+
+        density: Float[Tensor, "*ray_sample 1"] = density.reshape([*ray_samples.shape, -1])
 
         return density, density_embedding
 
@@ -115,9 +124,13 @@ class SpheRFField(Field):
     ) -> Dict[FieldHeadNames, Tensor]:
         outputs = {}
 
-        encoded_dir = self.direction_encoding(ray_samples.frustums.directions)
-        outputs[FieldHeadNames.RGB] = self.head_rgb(
-            torch.cat([encoded_dir, density_embedding], dim=-1)
-        )
+        # encode dir.
+        dir: Float[Tensor, "bs 3"] = ray_samples.frustums.directions.reshape([-1, 3])
+        encoded_dir: Float[Tensor, "bs dim_d"] = self.direction_encoding(dir)
+
+        # passthrough mlp_rgb.
+        mlp_rgb_out: Tensor = self.mlp_rgb(torch.cat([encoded_dir, density_embedding], dim=-1))
+        mlp_rgb_out = mlp_rgb_out.reshape([*ray_samples.shape, -1])
+        outputs[FieldHeadNames.RGB] = self.head_rgb(mlp_rgb_out)
 
         return outputs

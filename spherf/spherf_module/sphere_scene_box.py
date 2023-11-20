@@ -18,13 +18,13 @@ class SphereSceneBox:
     @staticmethod
     def build(cameras: Cameras, scale: float = 1.25, iter: int = 200):
         """Construct a sphere from the camera poses with optimization method."""
-
+        device = cameras.device
         # get rays from cameras' optical center to the principle point.
         cam_origins = cameras.camera_to_worlds[..., 3]
         cam_dir = cameras.camera_to_worlds[..., 2]
 
         # optimize the scene center.
-        center = torch.zeros(3, dtype=torch.float, requires_grad=True)
+        center = torch.zeros(3, dtype=torch.float, requires_grad=True, device=device)
         opt = torch.optim.SGD([center], lr=1e-3)
 
         # distance from a point(x, y, z) to ray(o, d) is:

@@ -6,16 +6,15 @@ import torch.distributed as dist
 from torch.cuda.amp.grad_scaler import GradScaler
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from nerfstudio.configs import base_config as cfg
 from nerfstudio.data.datamanagers.base_datamanager import DataManager, DataManagerConfig
-from nerfstudio.models.base_model import Model, ModelConfig
+from nerfstudio.models.base_model import Model
 from nerfstudio.pipelines.base_pipeline import (
     VanillaPipeline,
     VanillaPipelineConfig,
 )
 
-from .spherf_module.sphere_scene_box import SphereSceneBox
-from .spherf_model import SpheRFModelConfig
+from spherf.spherf_module.sphere_scene_box import SphereSceneBox
+from spherf.spherf_model import SpheRFModelConfig
 
 
 @dataclass
@@ -39,7 +38,6 @@ class SpheRFPipeline(VanillaPipeline):
         grad_scaler: Optional[GradScaler] = None,
     ):
         super(VanillaPipeline, self).__init__()
-        self.config = config
         self.test_mode = test_mode
         self.datamanager: DataManager = config.datamanager.setup(
             device=device, test_mode=test_mode, world_size=world_size, local_rank=local_rank
@@ -48,9 +46,9 @@ class SpheRFPipeline(VanillaPipeline):
         assert self.datamanager.train_dataset is not None, "Missing input dataset"
 
         # spheRF setting.
-        config.model.sphere_scene_box: SphereSceneBox = SphereSceneBox.build(
-            self.datamanager.train_dataset.cameras
-        )
+        cameras = self.datamanager.train_dataset.cameras.to(device)
+        config.model.sphere_scene_box: SphereSceneBox = SphereSceneBox.build(cameras)
+        self.config = config
 
         self._model: Model = config.model.setup(
             scene_box=self.datamanager.train_dataset.scene_box,

@@ -5,13 +5,13 @@ import torch
 from torch import nn, Tensor
 from jaxtyping import Float
 
-from .sphere_scene import SphereScene
+from spherf.spherf_module.sphere_grid import SphereGrid
 
 
 class SphereInterpolation(metaclass=ABCMeta):
     @abstractmethod
     def search_neighbors(
-        tgt: Float[Tensor, "*bs coord_dim"], scene: SphereScene
+        tgt: Float[Tensor, "*bs coord_dim"], scene: SphereGrid
     ) -> Float[Tensor, "*bs k field_dim"]:
         ...
 
@@ -23,9 +23,9 @@ class SphereInterpolation(metaclass=ABCMeta):
         ...
 
     def __call__(
-        self, tgt: Float[Tensor, "*bs coord_dim"], scene: SphereScene
+        self, tgt: Float[Tensor, "*bs coord_dim"], scene: SphereGrid
     ) -> Float[Tensor, "*bs field_dim"]:
-        neighbors = self.search_neighbors(tgt)
+        neighbors = self.search_neighbors(tgt, scene)
         v = self.interpolate(tgt, neighbors)
 
         return v
@@ -46,7 +46,7 @@ class AngularBilinearInterpolation(SphereInterpolation):
         return interpolated
 
     def search_neighbors(
-        tgt: Float[Tensor, "*bs 3"], scene: SphereScene
+        tgt: Float[Tensor, "*bs 3"], scene: SphereGrid
     ) -> Float[Tensor, "*bs 4 field_dim"]:
         N = scene.N
         vec = scene.scene_box.polar_coords(tgt)[..., :2]  # [theta, phi]
